@@ -1,8 +1,47 @@
 import numpy as np
 import numpy.random
-import pandas
+from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import pandas as pd
+
+
+def comp_plot_train(data, columns, names, x_title, y_title, titles, uncertainty_cols):
+    df = []
+    for d in data:
+        df.append(pd.DataFrame(d))
+
+    graph = []
+
+    for _ in columns:
+        graph.append(go.Figure())
+
+    for j, d in enumerate(df):
+        for i, col in enumerate(columns):
+            if uncertainty_cols[i] is None:
+                graph[i].add_trace(go.Scatter(
+                    x=d['t'],
+                    y=d[col],
+                    mode='lines',
+                    name=names[j], )
+                )
+            else:
+                graph[i].add_trace(go.Scatter(
+                    x=d['t'],
+                    y=d[col],
+                    mode='lines',
+                    name=names[j],
+                    error_y=dict(
+                        type='data',
+                        array=d[uncertainty_cols[i]],
+                        visible=True
+                    )),
+                )
+
+    for i, g in enumerate(graph):
+        g.update_layout(title=titles[i],
+                        xaxis_title=x_title[i],
+                        yaxis_title=y_title[i])
+        g.show()
 
 
 class Train:
@@ -11,8 +50,8 @@ class Train:
         self.sigma = sigma
         self.C = C
         self.true_X = np.array([0, 0])
-        self.motion_noise = motion_noise
-        self.obs_noise = obs_noise
+        self.motion_noise = np.sqrt(motion_noise)
+        self.obs_noise = np.sqrt(obs_noise)
 
     def get_ut(self, t):
         if t < 0.25:
@@ -39,9 +78,32 @@ class Train:
 
         df = pd.DataFrame(estimate_x)
 
-        fig1 = go.Figure()
-        fig2 = go.Figure()
-        fig1.add_trace(go.Scatter(
+        true_pos_vel_graph = make_subplots(rows=2, cols=1)
+
+        true_pos_vel_graph.add_trace(go.Scatter(
+            x=df['t'],
+            y=df['position'],
+            mode='lines',
+            name='Position',), row=1,col=1
+        )
+
+        true_pos_vel_graph.add_trace(go.Scatter(
+            x=df['t'],
+            y=df['velocity'],
+            mode='lines',
+            name='Velocity', ), row=2, col=1
+        )
+
+        true_pos_vel_graph.update_xaxes(title_text="Time", row=1, col=1)
+        true_pos_vel_graph.update_xaxes(title_text="Time", row=2, col=1)
+
+        true_pos_vel_graph.update_yaxes(title_text="Distance from A", row=1, col=1)
+        true_pos_vel_graph.update_yaxes(title_text="Velocity", row=2, col=1)
+        true_pos_vel_graph.update_layout(title_text="True Position")
+        true_pos_vel_graph.show()
+
+        est_position_graph = go.Figure()
+        est_position_graph.add_trace(go.Scatter(
             x=df['t'],
             y=df['position_mean'],
             mode='lines',
@@ -50,18 +112,45 @@ class Train:
                 type='data',
                 array=df['position_var'],
                 visible=True
-            )
+            )),
+        )
 
-        ))
+        est_position_graph.update_layout(
+            title='Estimated Position of Train vs Time',
+            xaxis_title='Time',
+            yaxis_title='Distance from A'
+        )
 
-        fig1.add_trace(go.Scatter(
+        est_position_graph.show()
+
+        est_position_vs_true_graph = go.Figure()
+        est_position_vs_true_graph.add_trace(go.Scatter(
+            x=df['t'],
+            y=df['position_mean'],
+            mode='lines',
+            name='Estimated Position',
+            error_y=dict(
+                type='data',
+                array=df['position_var'],
+                visible=True
+            )),
+        )
+
+        est_position_vs_true_graph.add_trace(go.Scatter(
             x=df['t'],
             y=df['position'],
             mode='lines',
             name='True position',
-        ))
+        ),)
 
-        fig2.add_trace(go.Scatter(
+        est_position_vs_true_graph.update_layout(
+            title='True and Estimated Position of Train vs Time',
+            xaxis_title='Time',
+            yaxis_title='Distance from A'
+        )
+
+        velocity_graph = go.Figure()
+        velocity_graph.add_trace(go.Scatter(
             x=df['t'],
             y=df['velocity_mean'],
             mode='lines',
@@ -74,26 +163,56 @@ class Train:
 
         ))
 
-        fig1.update_layout(
-            title='True and Estimated Position of Train',
+        velocity_graph.update_layout(
+            title='Velocity of Train vs Time',
             xaxis_title='Time',
-            yaxis_title='Distance from A'
+            yaxis_title='Velocity of Train (Km/h)'
         )
 
-        fig1.show()
-        fig2.show()
+        kalman_gain_graph = go.Figure()
+
+        kalman_gain_graph.add_trace(go.Scatter(
+            x=df['t'],
+            y=df['kalman_gain_x'],
+            mode='lines',
+            name='Kalman Gain X',
+        ))
 
 
-def run_train():
+        kalman_gain_graph.add_trace(go.Scatter(
+            x=df['t'],
+            y=df['kalman_gain_x_dot'],
+            mode='lines',
+            name='Kalman Gain X Dot',
+        ))
+
+        kalman_gain_graph.update_layout(
+            title='Kalman Gain vs Time for Train',
+            xaxis_title='Time',
+            yaxis_title='Kalman Gain'
+        )
+
+        est_position_vs_true_graph.show()
+        velocity_graph.show()
+        kalman_gain_graph.show()
+
+
+def run_train(t_start=None, t_end=None, custom_motion_noise=None, custom_obs_noise=None,plot=True):
     A = np.array([[1, 0.01],
                   [0, 1]])
 
     B = np.array([[0],
                   [1]])
 
-    motion_noise = [0.1 ** 2, 0.5 ** 2]
+    if custom_motion_noise is None:
+        motion_noise = [0.1 ** 2, 0.5 ** 2]
+    else:
+        motion_noise = custom_motion_noise
 
-    obs_noise = [0.01 ** 2]
+    if custom_obs_noise is None:
+        obs_noise = [0.01 ** 2]
+    else:
+        obs_noise = motion_noise
 
     R = np.array([[motion_noise[0], 0],
                   [0, motion_noise[1]]])
@@ -102,49 +221,20 @@ def run_train():
 
     C = np.array([[1 / 1500, 0]]).reshape((1, 2))
 
-    init_mu = np.random.normal(0, 10e-4, 2).reshape((2, 1))
+    init_mu = np.random.normal(0, 10e-2, 2).reshape((2, 1))
     init_sigma = np.array([[10e-4, 0], [0, 10e-4]])
     train = Train(init_mu, init_sigma, C, motion_noise, obs_noise)
     Kfilter = KalmanFilter(A, B, R, Q, C, "train")
 
     for t in np.arange(0, 3.27, 0.01):
         ut = train.get_ut(t)
-        zt = train.get_zt()
-        mu, sigma = Kfilter.update(train.mu, train.sigma, ut, zt, t, train.true_X)
-        train.mu = mu
-        train.sigma = sigma
-        train.true_X = train.update_true(t)
+        if t_start is not None:
+            if t_start <= t <= t_end:
+                mu, sigma = Kfilter.update(train.mu, train.sigma, ut, None, t, train.true_X)
+            else:
+                zt = train.get_zt()
+                mu, sigma = Kfilter.update(train.mu, train.sigma, ut, zt, t, train.true_X)
 
-    train.plot(Kfilter.estimated_x)
-
-
-def run_train_with_no_obs(t_start, t_end):
-    A = np.array([[1, 0.01],
-                  [0, 1]])
-
-    B = np.array([[0],
-                  [1]])
-
-    motion_noise = [0.1 ** 2, 0.5 ** 2]
-
-    obs_noise = [0.01 ** 2]
-
-    R = np.array([[motion_noise[0], 0],
-                  [0, motion_noise[1]]])
-
-    Q = np.array([obs_noise[0]])
-
-    C = np.array([[1 / 1500, 0]]).reshape((1, 2))
-
-    init_mu = np.random.normal(0, 10e-4, 2).reshape((2, 1))
-    init_sigma = np.array([[10e-4, 0], [0, 10e-4]])
-    train = Train(init_mu, init_sigma, C, motion_noise, obs_noise)
-    Kfilter = KalmanFilter(A, B, R, Q, C, "train")
-
-    for t in np.arange(0, 3.27, 0.01):
-        ut = train.get_ut(t)
-        if t_start <= t <= t_end:
-            mu, sigma = Kfilter.update(train.mu, train.sigma, ut, None, t, train.true_X)
         else:
             zt = train.get_zt()
             mu, sigma = Kfilter.update(train.mu, train.sigma, ut, zt, t, train.true_X)
@@ -153,7 +243,11 @@ def run_train_with_no_obs(t_start, t_end):
         train.sigma = sigma
         train.true_X = train.update_true(t)
 
-    train.plot(Kfilter.estimated_x)
+    if plot:
+        train.plot(Kfilter.estimated_x)
+
+    return train, Kfilter
+
 
 class KalmanFilter:
 
@@ -161,7 +255,7 @@ class KalmanFilter:
 
         self.A = A
         self.B = B
-        self.K = 0
+        self.K = np.array([[0, 0]]).reshape((2, 1))
         self.Q = Q
         self.C = C
         self.R = R
@@ -175,11 +269,12 @@ class KalmanFilter:
             self.estimated_x.append({"position": true_X[0], "velocity": true_X[1],
                                      "position_mean":  mu[0][0], "velocity_mean": mu[1][0],
                                      "position_var": np.sqrt(sigma[0][0]),
-                                     "velocity_var": np.sqrt(sigma[1][1]), "kalman_gain": self.K, "t": t})
+                                     "velocity_var": np.sqrt(sigma[1][1]), "kalman_gain_x": self.K[0][0],
+                                     "kalman_gain_x_dot": self.K[1][0],  "t": t})
 
         elif self.mode == "football":
-            self.estimated_x.append({"x_g": true_X[0], "y_g": true_X[1], "z_g": true_X[2],
-                                     "xdot_g": true_X[3], "ydot_g":true_X[4], "zdot_g": true_X[5],
+            self.estimated_x.append({"x_g": true_X[0][0], "y_g": true_X[1][0], "z_g": true_X[2][0],
+                                     "xdot_g": true_X[3][0], "ydot_g": true_X[4][0], "zdot_g": true_X[5][0],
                                      "x": mu[0][0], "y": mu[1][0], "z": mu[2][0],
                                      "xdot": mu[3][0], "ydot": mu[4][0], "zdot": mu[5][0],
                                      "x_var": sigma[0][0], "y_var": sigma[1][1], "z_var": sigma[2][2],
@@ -210,30 +305,56 @@ class KalmanFilter:
 
 
 class Football:
-    def __init__(self, mu, sigma, C, non_linear_obs=False):
+    def __init__(self, mu, sigma, C, non_linear_obs=False, state_noise=None, observation_noise=None, obs_space=3):
         self.mu = mu
         self.sigma = sigma
         self.C = C
-        self.true_X = np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61])
+        self.true_X = np.array([[24.0, 4.0, 0.0, -16.04, 36.8, 8.61]]).reshape((6,1))
         self.non_linear_obs = non_linear_obs
+        self.state_noise = np.sqrt(state_noise)
+        self.observation_noise = np.sqrt(observation_noise)
+        self.obs_space = obs_space
 
     def get_ut(self):
         return np.array([[-10*0.01]])
 
     def update_true(self):
-        noise_pos = np.random.normal(0, 0.01, (3))
-        noise_vel = np.random.normal(0, 0.1, (3))
-        noise = np.concatenate((noise_pos, noise_vel), axis=0)
-        xdot = self.true_X[3]
-        ydot = self.true_X[4]
-        zdot = self.true_X[5]
-        return self.true_X + np.array([xdot*0.01, ydot*0.01, zdot*0.01, 0, 0, -10*0.01]) + noise
 
-    def get_zt(self, h=None):
-        if not self.non_linear_obs:
-            return np.matmul(self.C, self.true_X.reshape((6, 1))) + np.random.normal(0, 0.1, (2))
+        noise_pos = np.random.normal(0, self.state_noise[0], (3, 1))
+        noise_vel = np.random.normal(0, self.state_noise[3], (3, 1))
+
+        noise = np.concatenate((noise_pos, noise_vel), axis=0)
+        xdot = self.true_X[3][0]
+        ydot = self.true_X[4][0]
+        zdot = self.true_X[5][0]
+        temp = np.array([xdot*0.01, ydot*0.01, zdot*0.01, 0, 0, -10*0.01]).reshape((6, 1))
+        return self.true_X + temp + noise.reshape((6, 1))
+
+    def get_zt(self):
+        if self.obs_space == 3:
+
+            if not self.non_linear_obs:
+                return np.matmul(self.C, self.true_X.reshape((6, 1))) + np.random.normal(0, self.observation_noise[0], ((3,1)))
+            else:
+                obs_noise = self.observation_noise
+                true_x = [self.true_X[0][0], self.true_X[1][0], self.true_X[2][0]]
+                bs1 = [32, -50, 10]
+                bs2 = [-32, -50, 10]
+                bs3 = [-32, 50, 10]
+                bs4 = [32, 50, 10]
+
+                d = [np.sqrt((bs1[0] - true_x[0]) ** 2 + (bs1[1] - true_x[1]) ** 2 + (
+                            bs1[2] - true_x[2]) ** 2) + np.random.normal(0, obs_noise[0]),
+                     np.sqrt((bs2[0] - true_x[0]) ** 2 + (bs2[1] - true_x[1]) ** 2 + (
+                                 bs2[2] - true_x[2]) ** 2) + np.random.normal(0, obs_noise[1]),
+                     np.sqrt((bs3[0] - true_x[0]) ** 2 + (bs3[1] - true_x[1]) ** 2 + (
+                                 bs3[2] - true_x[2]) ** 2) + np.random.normal(0, obs_noise[2]),
+                     np.sqrt((bs4[0] - true_x[0]) ** 2 + (bs4[1] - true_x[1]) ** 2 + (
+                                 bs4[2] - true_x[2]) ** 2) + np.random.normal(0, obs_noise[3])]
+
+                return d
         else:
-            return h(self.true_X)
+            return np.matmul(self.C, self.true_X.reshape((6, 1))) + np.random.normal(0, self.observation_noise[0], ((6, 1)))
 
     def plot(self, estimate_X):
         fig = go.Figure()
@@ -270,7 +391,7 @@ class Football:
         ))
 
         #drawing estimated trajectory
-        df = pandas.DataFrame(estimate_X)
+        df = pd.DataFrame(estimate_X)
         fig.add_trace(go.Scatter3d(
             x=df["x"],
             y=df["y"],
@@ -322,7 +443,7 @@ class Football:
         fig.show()
 
 
-def run_football_gps():
+def run_football_gps(traj_precal= None, custom_state_noise=None, custom_observation_noise= None):
     A = np.array([[1, 0, 0, 0.01, 0, 0],
                   [0, 1, 0, 0, 0.01, 0],
                   [0, 0, 1, 0, 0, 0.01],
@@ -332,43 +453,69 @@ def run_football_gps():
 
     B = np.array([[0], [0], [0], [0], [0], [1]]).reshape((6, 1))
 
-    R = np.array([[0.01, 0, 0, 0, 0, 0],
-                  [0, 0.01, 0, 0, 0, 0],
-                  [0, 0, 0.01, 0, 0, 0],
-                  [0, 0, 0, 0.1, 0, 0],
-                  [0, 0, 0, 0, 0.1, 0],
-                  [0, 0, 0, 0, 0, 0.1]])
+    if custom_state_noise is None:
+        r = [0.01**2, 0.01**2, 0.01**2, 0.1**2, 0.1**2, 0.1**2]
 
-    Q = np.array([[0.1, 0, 0],
-                  [0, 0.1, 0],
-                  [0, 0, 0.1]])
+    else:
+        r = custom_state_noise
+    custom_state_noise = r
+
+    R = np.array([[r[0], 0, 0, 0, 0, 0],
+                  [0, r[1], 0, 0, 0, 0],
+                  [0, 0, r[2], 0, 0, 0],
+                  [0, 0, 0, r[3], 0, 0],
+                  [0, 0, 0, 0, r[4], 0],
+                  [0, 0, 0, 0, 0, r[5]]])
+
+    if custom_observation_noise is None:
+        q = [0.1**2, 0.1**2, 0.1**2]
+    else:
+        q = custom_observation_noise
+
+    custom_observation_noise = q
+
+    Q = np.array([[q[0], 0, 0],
+                  [0, q[1], 0],
+                  [0, 0, q[2]]])
 
     C = np.array([[1, 0, 0, 0, 0, 0],
                   [0, 1, 0, 0, 0, 0],
                   [0, 0, 1, 0, 0, 0]])
 
-    init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]),numpy.random.normal(0, 10e-4, size=(6))).reshape((6,1))
-    var = np.array([[0.01, 0, 0, 0, 0, 0],
-                  [0, 0.01, 0, 0, 0, 0],
-                  [0, 0, 0.01, 0, 0, 0],
-                  [0, 0, 0, 0.1, 0, 0],
-                  [0, 0, 0, 0, 0.1, 0],
-                  [0, 0, 0, 0, 0, 0.1]])
-    football = Football(init_state, var, C)
+    init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]), numpy.random.normal(0, 10e-2, size=(6))).reshape((6,1))
+    var = np.array([[0.0001, 0, 0, 0, 0, 0],
+                  [0, 0.0001, 0, 0, 0, 0],
+                  [0, 0, 0.0001, 0, 0, 0],
+                  [0, 0, 0, 0.0001, 0, 0],
+                  [0, 0, 0, 0, 0.0001, 0],
+                  [0, 0, 0, 0, 0, 0.0001]])
+
+    if traj_precal is None:
+        football = Football(init_state, var, C, non_linear_obs=False, state_noise=custom_state_noise, observation_noise=custom_observation_noise)
+    else:
+        football = Football(traj_precal[0], var, C, non_linear_obs=False, state_noise=custom_state_noise, observation_noise=custom_observation_noise)
+
     Kfilter = KalmanFilter(A, B, R, Q, C, "football", 6)
 
-    for t in np.arange(0, 1.31, 0.01):
+    i = 1
+    for t in np.arange(0, 1.30, 0.01):
         ut = football.get_ut()
         zt = football.get_zt()
         mu, sigma = Kfilter.update(football.mu, football.sigma, ut, zt, t, football.true_X)
         football.mu = mu
         football.sigma = sigma
-        football.true_X = football.update_true()
+        if traj_precal is None:
+            football.true_X = football.update_true()
+        else:
+            football.true_X = traj_precal[i]
+            i += 1
 
     football.plot(Kfilter.estimated_x)
+    return Kfilter
 
 
-def run_football_imu():
+def run_football_imu(traj_precal=None, custom_state_noise = None, custom_observation_noise=None):
+
     A = np.array([[1, 0, 0, 0.01, 0, 0],
                   [0, 1, 0, 0, 0.01, 0],
                   [0, 0, 1, 0, 0, 0.01],
@@ -376,21 +523,33 @@ def run_football_imu():
                   [0, 0, 0, 0, 1, 0],
                   [0, 0, 0, 0, 0, 1]])
 
-    B = np.array([[0], [0], [0], [0], [0], [1]])
+    B = np.array([[0], [0], [0], [0], [0], [1]]).reshape((6, 1))
 
-    R = np.array([[0.01, 0, 0, 0, 0, 0],
-                  [0, 0.01, 0, 0, 0, 0],
-                  [0, 0, 0.01, 0, 0, 0],
-                  [0, 0, 0, 0.1, 0, 0],
-                  [0, 0, 0, 0, 0.1, 0],
-                  [0, 0, 0, 0, 0, 0.1]])
+    if custom_state_noise is None:
+        r = [0.01**2, 0.01**2, 0.01**2, 0.1**2, 0.1**2, 0.1**2]
+    else:
+        r = custom_state_noise
+    custom_state_noise = r
 
-    Q = np.array([[0.1, 0, 0, 0, 0, 0],
-                  [0, 0.1, 0, 0, 0, 0],
-                  [0, 0, 0.1, 0, 0, 0],
-                  [0, 0, 0, 0.1, 0, 0],
-                  [0, 0, 0, 0, 0.1, 0],
-                  [0, 0, 0, 0, 0, 0.1]])
+    R = np.array([[r[0], 0, 0, 0, 0, 0],
+                  [0, r[1], 0, 0, 0, 0],
+                  [0, 0, r[2], 0, 0, 0],
+                  [0, 0, 0, r[3], 0, 0],
+                  [0, 0, 0, 0, r[4], 0],
+                  [0, 0, 0, 0, 0, r[5]]])
+
+    if custom_observation_noise is None:
+        q = [0.1**2, 0.1**2, 0.1**2, 0.1**2, 0.1**2, 0.1**2]
+    else:
+        q = custom_observation_noise
+    custom_observation_noise = q
+
+    Q = np.array([[q[0], 0, 0, 0, 0, 0],
+                  [0, q[1], 0, 0, 0, 0],
+                  [0, 0, q[2], 0, 0, 0],
+                  [0, 0, 0, q[3], 0, 0],
+                  [0, 0, 0, 0, q[4], 0],
+                  [0, 0, 0, 0, 0, q[5]]])
 
     C = np.array([[1, 0, 0.01, 0, 0, 0],
                   [0, 1, 0, 0, 0.01, 0],
@@ -400,62 +559,111 @@ def run_football_imu():
                   [0, 0, 0, 0, 0, 1]])
 
     init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]),
-                        numpy.random.normal(0, 10e-4, size=(6))).reshape((6, 1))
-    var = np.array([[0.01, 0, 0, 0, 0, 0],
-                    [0, 0.01, 0, 0, 0, 0],
-                    [0, 0, 0.01, 0, 0, 0],
-                    [0, 0, 0, 0.1, 0, 0],
-                    [0, 0, 0, 0, 0.1, 0],
-                    [0, 0, 0, 0, 0, 0.1]])
+                        np.random.normal(0, 10e-2, size=(6))).reshape((6, 1))
+    var = np.array([[0.0001, 0, 0, 0, 0, 0],
+                    [0, 0.0001, 0, 0, 0, 0],
+                    [0, 0, 0.0001, 0, 0, 0],
+                    [0, 0, 0, 0.0001, 0, 0],
+                    [0, 0, 0, 0, 0.0001, 0],
+                    [0, 0, 0, 0, 0, 0.0001]])
 
-    football = Football(init_state, var, C)
+    if traj_precal is None:
+        football = Football(init_state, var, C, False, custom_state_noise, custom_observation_noise,6)
+    else:
+        football = Football(traj_precal[0], var, C, False, custom_state_noise, custom_observation_noise,6)
+
     Kfilter = KalmanFilter(A, B, R, Q, C, "football", 6)
 
-    for t in np.arange(0, 1.31, 0.01):
+    i = 1
+    for t in np.arange(0, 1.30, 0.01):
         ut = football.get_ut()
         zt = football.get_zt()
         mu, sigma = Kfilter.update(football.mu, football.sigma, ut, zt, t, football.true_X)
         football.mu = mu
         football.sigma = sigma
-        football.true_X = football.update_true()
+        if traj_precal is None:
+            football.true_X = football.update_true()
+        else:
+            football.true_X = traj_precal[i]
+            i += 1
 
     football.plot(Kfilter.estimated_x)
+    return Kfilter
 
 
-def h_base_station(true_x):
-    bs1 = [32, -50, 10]
-    bs2 = [-32, -50, 10]
-    bs3 = [-32, 50, 10]
-    bs4 = [32, 50, 10]
+class ExtendedKalmanFilter:
 
-    d = [np.sqrt((bs1[0] - true_x[0])**2 + (bs1[1] - true_x[1])**2 + (bs1[2] - true_x[2])**2) + np.random.normal(0, 0.1),
-         np.sqrt((bs2[0] - true_x[0])**2 + (bs2[1] - true_x[1])**2 + (bs2[2] - true_x[2])**2) + np.random.normal(0, 0.1),
-         np.sqrt((bs3[0] - true_x[0])**2 + (bs3[1] - true_x[1])**2 + (bs3[2] - true_x[2])**2) + np.random.normal(0, 0.1),
-         np.sqrt((bs4[0] - true_x[0])**2 + (bs4[1] - true_x[1])**2 + (bs4[2] - true_x[2])**2) + np.random.normal(0, 0.1)]
+    def __init__(self, A, B, R, Q, C, n=2):
+        self.A = A
+        self.B = B
+        self.K = np.array([[0, 0]]).reshape((2, 1))
+        self.Q = Q
+        self.C = C
+        self.R = R
+        self.n = n
 
-    #AX=B
-    A = np.multiply(-2, np.array([[bs2[0]-bs1[0], bs2[1]-bs1[1]],
-                            [bs3[0]-bs1[0], bs3[1]-bs1[1]],
-                            [bs4[0]-bs1[0], bs4[1]-bs1[1]]]))
+        self.estimated_x = []
 
-    temp = d[0]**2 - bs1[0]**2 - bs1[1]**2
-    B = np.array([[d[1]**2 - bs2[0]**2 - bs2[1]**2 - temp],
-               [d[2]**2 - bs3[0]**2 - bs3[1]**2 - temp],
-               [d[3]**2 - bs4[0]**2 - bs4[1]**2 - temp]])
+    def g(self, mu, u_t):
+        return np.add(np.matmul(self.A, mu), np.matmul(self.B, u_t).reshape(self.n, 1))
 
-    sol = np.linalg.lstsq(A, B)
-    temp = d[0]**2 - (bs1[0]-sol[0][0])**2 - (bs1[1]-sol[0][1])**2
-    #z has two solutions
-    z1 = -np.sqrt(d[0]**2 - (bs1[0]-sol[0][0])**2 - (bs1[1]-sol[0][1])**2) + bs1[2]
-    z2 = +np.sqrt(d[0]**2 - (bs1[0]-sol[0][0])**2 - (bs1[1]-sol[0][1])**2) + bs1[2]
+    def G(self):
+        return self.A
 
-    if numpy.isclose(np.sqrt((bs1[0] - sol[0][0])**2 + (bs1[1] - sol[0][1])**2 + (bs1[2] - z1)**2),d[0], atol=2):
-        return np.array([sol[0][0], sol[0][1], z1]).reshape((3, 1))
-    else:
-        return np.array([sol[0][0], sol[0][1], z2]).reshape((3, 1))
+    def h(self, mu):
+
+        mu = [mu[0][0], mu[1][0], mu[2][0]]
+        bs1 = [32, -50, 10]
+        bs2 = [-32, -50, 10]
+        bs3 = [-32, 50, 10]
+        bs4 = [32, 50, 10]
+
+        d = [np.sqrt((bs1[0] - mu[0]) ** 2 + (bs1[1] - mu[1]) ** 2 + (bs1[2] - mu[2]) ** 2),
+             np.sqrt((bs2[0] - mu[0]) ** 2 + (bs2[1] - mu[1]) ** 2 + (bs2[2] - mu[2]) ** 2),
+             np.sqrt((bs3[0] - mu[0]) ** 2 + (bs3[1] - mu[1]) ** 2 + (bs3[2] - mu[2]) ** 2),
+             np.sqrt((bs4[0] - mu[0]) ** 2 + (bs4[1] - mu[1]) ** 2 + (bs4[2] - mu[2]) ** 2),]
+        return d
+
+    def H(self, mu, d):
+        return np.array([ [2*(mu[0][0] - 32)/d[0], 2*(mu[0][0] + 32)/d[1], 2*(mu[0][0] + 32)/d[2], 2*(mu[0][0] - 32)/d[3]],
+                          [2*(mu[1][0] + 50)/d[0], 2*(mu[1][0] + 50)/d[1], 2*(mu[1][0] - 50)/d[2], 2*(mu[1][0] - 50)/d[3]],
+                          [2*(mu[0][0] - 10)/d[0], 2*(mu[0][0] - 10)/d[1], 2*(mu[0][0] - 10)/d[2], 2*(mu[0][0] - 10)/d[3]],
+                          [0, 0, 0, 0],
+                          [0, 0, 0, 0],
+                          [0, 0, 0, 0]])
+
+    def update(self, mu, sigma, u_t, z_t, t, true_X):
+        self.estimated_x.append({"x_g": true_X[0][0], "y_g": true_X[1][0], "z_g": true_X[2][0],
+                                 "xdot_g": true_X[3][0], "ydot_g":true_X[4][0], "zdot_g": true_X[5][0],
+                                 "x": mu[0][0], "y": mu[1][0], "z": mu[2][0],
+                                 "xdot": mu[3][0], "ydot": mu[4][0], "zdot": mu[5][0],
+                                 "x_var": sigma[0][0], "y_var": sigma[1][1], "z_var": sigma[2][2],
+                                 "xdot_var": sigma[3][3], "ydot_var": sigma[4][4], "zdot_var": sigma[5][5],
+                                 "kalman_gain": self.K, "t": t
+                                 })
+        g = self.g(mu, u_t)
+        G = self.G()
+        mu_prediction = g
+        sigma_prediction = np.add(np.matmul(np.matmul(G, sigma), G.T), self.R)
+        d = self.h(mu_prediction)
+        H = self.H(mu, d).T
+        temp = np.add(np.matmul(np.matmul(H, sigma_prediction), H.T), self.Q)
+
+        if temp.shape == (1, 1):
+            temp = 1/temp
+        else:
+            temp = np.linalg.inv(temp)
+
+        self.K = np.matmul(np.matmul(sigma_prediction, H.T), temp)
+
+        mu_estimated = np.add(mu_prediction, np.matmul(self.K, np.subtract(z_t, d)))
+        sigma_estimated = np.matmul(np.subtract(np.identity(self.n),
+                                         np.matmul(self.K, H)), sigma_prediction)
+
+        return mu_estimated, sigma_estimated
 
 
-def run_football_poles():
+def run_football_poles(traj_precal=None, custom_state_noise= None, custom_observation_noise= None):
     A = np.array([[1, 0, 0, 0.01, 0, 0],
                   [0, 1, 0, 0, 0.01, 0],
                   [0, 0, 1, 0, 0, 0.01],
@@ -463,45 +671,187 @@ def run_football_poles():
                   [0, 0, 0, 0, 1, 0],
                   [0, 0, 0, 0, 0, 1]])
 
-    B = np.array([[0], [0], [0], [0], [0], [1]])
+    B = np.array([[0], [0], [0], [0], [0], [1]]).reshape((6, 1))
 
-    R = np.array([[0.01, 0, 0, 0, 0, 0],
-                  [0, 0.01, 0, 0, 0, 0],
-                  [0, 0, 0.01, 0, 0, 0],
-                  [0, 0, 0, 0.1, 0, 0],
-                  [0, 0, 0, 0, 0.1, 0],
-                  [0, 0, 0, 0, 0, 0.1]])
+    if custom_state_noise is None:
+        r = [0.01 ** 2, 0.01 ** 2, 0.01 ** 2, 0.1 ** 2, 0.1 ** 2, 0.1 ** 2]
 
-    Q = np.array([[0.1, 0, 0],
-                  [0, 0.1, 0],
-                  [0, 0, 0.1]])
+    else:
+        r = custom_state_noise
+    custom_state_noise = r
+
+    R = np.array([[r[0], 0, 0, 0, 0, 0],
+                  [0, r[1], 0, 0, 0, 0],
+                  [0, 0, r[2], 0, 0, 0],
+                  [0, 0, 0, r[3], 0, 0],
+                  [0, 0, 0, 0, r[4], 0],
+                  [0, 0, 0, 0, 0, r[5]]])
+
+    if custom_observation_noise is None:
+        q = [0.1 ** 2, 0.1 ** 2, 0.1 ** 2, 0.1**2]
+    else:
+        q = custom_observation_noise
+
+    custom_observation_noise = q
+
+    Q = np.array([[q[0], 0, 0, 0],
+                  [0, q[1], 0, 0],
+                  [0, 0, q[2], 0],
+                  [0, 0, 0, q[3]]])
 
     C = np.array([[1, 0, 0, 0, 0, 0],
                   [0, 1, 0, 0, 0, 0],
                   [0, 0, 1, 0, 0, 0]])
 
     init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]),
-                        numpy.random.normal(0, 10e-4, size=(6))).reshape((6, 1))
+                        np.random.normal(0, 10e-2, size=(6))).reshape((6, 1))
+
+    var = np.array([[0.0001, 0, 0, 0, 0, 0],
+                    [0, 0.0001, 0, 0, 0, 0],
+                    [0, 0, 0.0001, 0, 0, 0],
+                    [0, 0, 0, 0.0001, 0, 0],
+                    [0, 0, 0, 0, 0.0001, 0],
+                    [0, 0, 0, 0, 0, 0.0001]])
+
+    if traj_precal is None:
+        football = Football(init_state, var, C, True, custom_state_noise, custom_observation_noise)
+    else:
+        football = Football(traj_precal[0], var, C, True, custom_state_noise, custom_observation_noise, )
+
+    Kfilter = ExtendedKalmanFilter(A, B, R, Q, C, 6,)
+
+    i = 1
+    for t in np.arange(0, 1.30, 0.01):
+        ut = football.get_ut()
+        zt = football.get_zt()
+        mu, sigma = Kfilter.update(football.mu, football.sigma, ut, zt, t, football.true_X)
+        football.mu = mu
+        football.sigma = sigma
+        if traj_precal is None:
+            football.true_X = football.update_true()
+        else:
+            football.true_X = traj_precal[i]
+            i += 1
+
+    football.plot(Kfilter.estimated_x)
+    return Kfilter
+    #this is non linear
+
+
+def plot_football_all(sensor_trajs):
+    fig = go.Figure()
+    field = [
+        [32, -50, 0],
+        [-32, -50, 0],
+        [-32, 50, 0],
+        [32, 50, 0],
+        [32, -50, 0]
+    ]
+    goal = [
+        [4, 50, 3],
+        [-4, 50, 3],
+        [-4, 50, 0],
+        [4, 50, 0],
+        [4, 50, 3]
+    ]
+    field_x, field_y, field_z = zip(*field)
+    goal_x, goal_y, goal_z = zip(*goal)
+
+    # drawing field
+    fig.add_trace(go.Scatter3d(
+        x=field_x, y=field_y, z=field_z,
+        mode='lines',
+        name='Playing Field',
+        line=dict(color='red', width=2)
+    ))
+    # drawing goal post
+    fig.add_trace(go.Scatter3d(
+        x=goal_x, y=goal_y, z=goal_z,
+        mode='lines',
+        name='Goal Post',
+        line=dict(color='blue', width=2)
+    ))
+
+    # drawing estimated trajectory
+    names = ["Estimated with GPS", " Estimated with IMU", " Estimated with Basepoles"]
+
+    for i, traj in enumerate(sensor_trajs):
+
+        df = pd.DataFrame(traj.estimated_x)
+
+        if i == 0:
+            fig.add_trace(go.Scatter3d(
+                x=df["x_g"],
+                y=df["y_g"],
+                z=df["z_g"],
+                name='Ground',
+                mode='lines',
+            ))
+
+        fig.add_trace(go.Scatter3d(
+            x=df["x"],
+            y=df["y"],
+            z=df["z"],
+            name=names[i],
+            mode='lines',
+        ))
+        # drawing ground truth trajectory
+
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(range=[-60, 60], dtick=10),
+            yaxis=dict(range=[-60, 60], dtick=10),
+            zaxis=dict(range=[-60, 60], dtick=10)
+        )
+    )
+
+    fig.update_layout(
+        title='Foot Trajectory with uncertainty',
+        scene=dict(
+            xaxis_title='X Axis',
+            yaxis_title='Y Axis',
+            zaxis_title='Z Axis'
+        )
+    )
+
+    fig.show()
+
+
+def run_football_all(custom_state_noise=None, custom_observation_noise=None):
+
+    init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]),
+                        np.random.normal(0, 10e-2, size=(6))).reshape((6, 1))
     var = np.array([[0.01, 0, 0, 0, 0, 0],
                     [0, 0.01, 0, 0, 0, 0],
                     [0, 0, 0.01, 0, 0, 0],
                     [0, 0, 0, 0.1, 0, 0],
                     [0, 0, 0, 0, 0.1, 0],
                     [0, 0, 0, 0, 0, 0.1]])
+    if custom_state_noise is None:
+        r = [0.01 ** 2, 0.01 ** 2, 0.01 ** 2, 0.1 ** 2, 0.1 ** 2, 0.1 ** 2]
 
-    football = Football(init_state, var, C, True)
-    Kfilter = KalmanFilter(A, B, R, Q, C, "football", 6)
+    else:
+        r = custom_state_noise
+    custom_state_noise = r
 
-    for t in np.arange(0, 1.31, 0.01):
-        ut = football.get_ut()
-        zt = football.get_zt(h_base_station)
-        mu, sigma = Kfilter.update(football.mu, football.sigma, ut, zt, t, football.true_X)
-        football.mu = mu
-        football.sigma = sigma
+    if custom_observation_noise is None:
+        q = [0.01, 0.01, 0.01]
+    else:
+        q = custom_observation_noise
+
+    custom_observation_noise = q
+    football = Football(init_state, var, None,False, custom_state_noise, custom_observation_noise)
+    traj = [football.mu]
+
+    for t in np.arange(0, 1.30, 0.01):
         football.true_X = football.update_true()
+        traj.append(football.true_X)
 
-    football.plot(Kfilter.estimated_x)
-    #this is non linear
+    Kfilter_imu = run_football_imu(traj)
+    Kfilter_gps = run_football_gps(traj)
+    Kfilter_poles = run_football_poles(traj)
+
+    plot_football_all([Kfilter_gps, Kfilter_imu, Kfilter_poles])
 
 
 def predict_goal(bel_mean, bel_variance):
@@ -511,10 +861,29 @@ def predict_goal(bel_mean, bel_variance):
         raise NotImplementedError("not")
 
 
+def football_ground_traj_exp(position):
+    goal_range_x = [4, -4]
+    goal_range_y = 50
+    goal_range_z = [3, 0]
+
+
+
 if __name__ == "__main__":
     np.random.seed(234)
-    run_train()
-    run_train_with_no_obs(1.5, 2.5)
+    train_exp1 = run_train()
+    # train_noise_more = run_train(None, None, [0.002, 0.35], [0.0002])
+    # train_noise_less = run_train(None, None, [0.00005, 0.15], [0.000005])
+    #train_failure_obs = run_train(t_start=1.5, t_end=2.5)
+
+    # comp_plot_train([train_exp1[1].estimated_x, train_exp2_pos_noise_less[1].estimated_x,
+    #                 train_exp2_pos_noise_more[1].estimated_x],
+    #                 ["position", "position_mean"], ["given noise", "less noise", "more noise"],["time", "time"],
+    #                 ["position","position"],["Actual Position", "Estimated Position"], [None,"position_var"])
+
+    # train_exp3 = run_train(None, None, [0.1 ** 2, 0.7 ** 2], [0.01 ** 2])
+    # train_exp4 = run_train(None, None, [0.1 ** 2, 0.5 ** 2], [0.04 ** 2])
+
+    #run_football_all()
     #run_football_gps()
     #run_football_imu()
     #run_football_poles()

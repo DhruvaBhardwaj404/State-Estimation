@@ -110,7 +110,7 @@ class Train:
             name='Estimated Position',
             error_y=dict(
                 type='data',
-                array=df['position_var'],
+                array=np.sqrt(df['position_var']),
                 visible=True
             )),
         )
@@ -131,7 +131,7 @@ class Train:
             name='Estimated Position',
             error_y=dict(
                 type='data',
-                array=df['position_var'],
+                array=np.sqrt(df['position_var']),
                 visible=True
             )),
         )
@@ -157,7 +157,7 @@ class Train:
             name='Estimated_Velocity',
             error_y=dict(
                 type='data',
-                array=df['velocity_var'],
+                array=np.sqrt(df['velocity_var']),
                 visible=True
             )
 
@@ -197,7 +197,8 @@ class Train:
         kalman_gain_graph.show()
 
 
-def run_train(t_start=None, t_end=None, custom_motion_noise=None, custom_obs_noise=None,plot=True):
+def run_train(t_start=None, t_end=None, custom_motion_noise=None, custom_obs_noise=None, plot=True):
+    numpy.random.seed(404)
     A = np.array([[1, 0.01],
                   [0, 1]])
 
@@ -226,7 +227,7 @@ def run_train(t_start=None, t_end=None, custom_motion_noise=None, custom_obs_noi
     train = Train(init_mu, init_sigma, C, motion_noise, obs_noise)
     Kfilter = KalmanFilter(A, B, R, Q, C, "train")
 
-    for t in np.arange(0, 3.27, 0.01):
+    for t in np.arange(0, 3.26, 0.01):
         ut = train.get_ut(t)
         if t_start is not None:
             if t_start <= t <= t_end:
@@ -300,7 +301,6 @@ class KalmanFilter:
 
             return mu_estimated, sigma_estimated
         else:
-
             return mu_prediction, sigma_prediction
 
 
@@ -315,7 +315,7 @@ class Football:
         if not field_2d:
             self.true_X = np.array([[24.0, 4.0, 0.0, -16.04, 36.8, 8.61]]).reshape((6,1))
         else:
-            self.true_X = np.array([[0.0, 50.0, 0.0, 40.0]]).reshape((4, 1))
+            self.true_X = np.array([[0.0, -50.0, 0.0, 40.0]]).reshape((4, 1))
 
         self.non_linear_obs = non_linear_obs
         self.state_noise = np.sqrt(state_noise)
@@ -473,8 +473,10 @@ class Football:
         fig.show()
 
 
-def run_football_gps(traj_precal= None, custom_state_noise=None, custom_observation_noise= None, title="Given_Noise_With_GPS"):
-    numpy.random.seed(653)
+def run_football_gps(traj_precal= None, custom_state_noise=None, custom_observation_noise= None, title="Given_Noise_With_GPS", plot=True, seed=True):
+    if seed:
+        numpy.random.seed(653)
+
     A = np.array([[1, 0, 0, 0.01, 0, 0],
                   [0, 1, 0, 0, 0.01, 0],
                   [0, 0, 1, 0, 0, 0.01],
@@ -530,10 +532,11 @@ def run_football_gps(traj_precal= None, custom_state_noise=None, custom_observat
 
     i = 1
     sensor_traj = []
+
     for t in np.arange(0, 1.30, 0.01):
         ut = football.get_ut()
         zt = football.get_zt()
-        sensor_traj.append({"x_s": zt[0][0], "y_s": zt[1][0]})
+        sensor_traj.append({"x_s": zt[0][0], "y_s": zt[1][0], "z_s":zt[2][0]})
         mu, sigma = Kfilter.update(football.mu, football.sigma, ut, zt, t, football.true_X)
         football.mu = mu
         football.sigma = sigma
@@ -543,12 +546,16 @@ def run_football_gps(traj_precal= None, custom_state_noise=None, custom_observat
             football.true_X = traj_precal[i]
             i += 1
 
-    football.plot(Kfilter.estimated_x, title)
-    plot_XY_projection(Kfilter.estimated_x, sensor_traj, title)
-    return Kfilter
+    if plot:
+        football.plot(Kfilter.estimated_x, title)
+        plot_XY_projection(Kfilter.estimated_x, sensor_traj, title)
+
+    return Kfilter, sensor_traj
 
 
-def run_football_imu(traj_precal=None, custom_state_noise = None, custom_observation_noise=None,title="Given_Noise_With_IMU"):
+def run_football_imu(traj_precal=None, custom_state_noise = None, custom_observation_noise=None,title="Given_Noise_With_IMU",plot=True, seed=True):
+    if seed:
+        np.random.seed(232)
 
     A = np.array([[1, 0, 0, 0.01, 0, 0],
                   [0, 1, 0, 0, 0.01, 0],
@@ -608,10 +615,13 @@ def run_football_imu(traj_precal=None, custom_state_noise = None, custom_observa
 
     Kfilter = KalmanFilter(A, B, R, Q, C, "football", 6)
 
+    sensor_traj = []
+
     i = 1
     for t in np.arange(0, 1.30, 0.01):
         ut = football.get_ut()
         zt = football.get_zt()
+        sensor_traj.append({"x_s":zt[0][0], "y_s":zt[1][0], "z_s":zt[2][0]})
         mu, sigma = Kfilter.update(football.mu, football.sigma, ut, zt, t, football.true_X)
         football.mu = mu
         football.sigma = sigma
@@ -620,9 +630,10 @@ def run_football_imu(traj_precal=None, custom_state_noise = None, custom_observa
         else:
             football.true_X = traj_precal[i]
             i += 1
+    if plot:
+        football.plot(Kfilter.estimated_x, title)
 
-    football.plot(Kfilter.estimated_x,title)
-    return Kfilter
+    return Kfilter, sensor_traj
 
 
 class ExtendedKalmanFilter:
@@ -697,18 +708,18 @@ class ExtendedKalmanFilter:
             if self.bs_mode == 0:
                 return np.array([[2 * (mu[0][0] + 32) / d[0][0], 2 * (mu[0][0] - 32) / d[1][0]],
                                  [2 * (mu[1][0] - 50) / d[0][0], 2 * (mu[1][0] - 50) / d[1][0]],
-                                 [2 * (mu[2][0] - 10) / d[0][0], 2 * (mu[2][0] - 10) / d[1][0]],
-                                 [0, 0,],])
+                                 [0, 0,],
+                                 [0, 0]])
             if self.bs_mode == 1:
                 return np.array([[2 * (mu[0][0] - 32) / d[0][0], 2 * (mu[0][0] - 32) / d[1][0]],
                                  [2 * (mu[1][0] + 50) / d[0][0], 2 * (mu[1][0] - 50) / d[1][0]],
-                                 [2 * (mu[2][0] - 10) / d[0][0], 2 * (mu[2][0] - 10) / d[1][0]],
+                                 [0, 0],
                                  [0, 0,],
                                  ])
             if self.bs_mode == 2:
                 return np.array([[2 * (mu[0][0] + 32) / d[0][0], 2 * (mu[0][0] - 32) / d[1][0]],
                                  [2 * (mu[1][0] + 50) / d[0][0], 2 * (mu[1][0] - 50) / d[1][0]],
-                                 [2 * (mu[2][0] - 10) / d[0][0], 2 * (mu[2][0] - 10) / d[1][0]],
+                                 [0, 0],
                                  [0, 0,],
                                  ])
 
@@ -938,14 +949,7 @@ def run_football_all(custom_state_noise=None, custom_observation_noise=None):
     Kfilter_gps = run_football_gps(traj)
     Kfilter_poles = run_football_poles(traj)
 
-    plot_football_all([Kfilter_gps, Kfilter_imu, Kfilter_poles])
-
-
-def predict_goal(bel_mean, bel_variance):
-    if bel_variance is None:
-        raise NotImplementedError("not")
-    else:
-        raise NotImplementedError("not")
+    plot_football_all([Kfilter_gps[0], Kfilter_imu[0], Kfilter_poles])
 
 
 def plot_without_uncertainity(traj, goal, cols, title=''):
@@ -1011,214 +1015,157 @@ def plot_without_uncertainity(traj, goal, cols, title=''):
     fig.show()
 
 
-def football_ground_traj_exp(custom_state_noise=None, custom_observation_noise=None):
-    np.random.seed(404)
-    init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]),
-                        np.random.normal(0, 10e-2, size=(6))).reshape((6, 1))
-    var = np.array([[0.01, 0, 0, 0, 0, 0],
-                    [0, 0.01, 0, 0, 0, 0],
-                    [0, 0, 0.01, 0, 0, 0],
-                    [0, 0, 0, 0.1, 0, 0],
-                    [0, 0, 0, 0, 0.1, 0],
-                    [0, 0, 0, 0, 0, 0.1]])
-    if custom_state_noise is None:
-        r = [0.01 ** 2, 0.01 ** 2, 0.01 ** 2, 0.1 ** 2, 0.1 ** 2, 0.1 ** 2]
+def predict_goal(position):
 
-    else:
-        r = custom_state_noise
-    custom_state_noise = r
+    goal_range_x = [-4, 4]
+    goal_range_y = [49.5, 50.5]
+    goal_range_z = [0, 3]
 
-    if custom_observation_noise is None:
-        q = [0.01, 0.01, 0.01]
-    else:
-        q = custom_observation_noise
+    if goal_range_x[0] < position["x"] < goal_range_x[1]:
+        if goal_range_z[0] < position["z"] < goal_range_z[1]:
+            if goal_range_y[0] < position["y"] < goal_range_y[1]:
+                return True
 
-    custom_observation_noise = q
-
-    goal = 0
-    traj = []
-    for i in range(0, 1000):
-        football = Football(init_state, var, None, False, custom_state_noise, custom_observation_noise)
-        l_traj = [[football.true_X.flatten()], False]
-        for t in np.arange(0, 1.30, 0.01):
-            football.true_X = football.update_true()
-            l_traj[0].append(football.true_X.flatten())
-
-            if t > 1:
-                position = football.true_X.flatten()
-                goal_range_x = [-4, 4]
-                goal_range_y = [49.5, 50.5]
-                goal_range_z = [0, 3]
-
-                if goal_range_x[0] < position[0] < goal_range_x[1]:
-                    if goal_range_z[0] < position[2] < goal_range_z[1]:
-                        if goal_range_y[0] < position[1] < goal_range_y[1]:
-                            l_traj[1] = True
-        traj.append(l_traj)
-        if l_traj[1]:
-            goal += 1
-    plot_without_uncertainity(traj, goal, ["x", "y", "z", "xdot", "y_dot", "z_dot"], str(goal/10)+"%")
+    return False
 
 
-def football_gps_traj_exp(custom_state_noise= None, custom_observation_noise=None):
+def predict_goal_with_uncertainty(position):
+    goal_range_x = [-4, 4]
+    goal_range_y = [49.5, 50.5]
+    goal_range_z = [0, 3]
+    goal= False
+    if goal_range_x[0] < position["x"] < goal_range_x[1]:
+        if goal_range_z[0] < position["z"] < goal_range_z[1]:
+            if goal_range_y[0] < position["y"] < goal_range_y[1]:
+                std_dev = [ np.sqrt(position["x_var"]), position["y_var"],
+                            np.sqrt(position["z_var"])]
+
+                ecl_a = 2 * std_dev[0]
+                ecl_b = 2 * std_dev[1]
+                ecl_c = 2 * std_dev[2]
+
+                ecl_centre_x = position["x"]
+                ecl_centre_y = position["y"]
+                ecl_centre_z = position["z"]
+
+                x_intervals = np.arange(0.5, 4, 1 / 10)
+                y_intervals = np.arange(49, 51, 1 / 10)
+                z_intervals = np.arange(0, 3, 1 / 10)
+                volume = (1 / 10) ** 3
+                max_volume = ((4 / 3) * np.pi * ecl_a * ecl_b * ecl_c)/2
+                total_volume = 0
+                for x in x_intervals:
+                    for y in y_intervals:
+                        for z in z_intervals:
+                            check = (((x - ecl_centre_x) ** 2) / ecl_a) + (((y - ecl_centre_y) ** 2) / ecl_b) + (
+                                        ((z - ecl_centre_z) ** 2) / ecl_c)
+                            if check <= 1:
+                                total_volume += volume
+
+                goal_percentage = (total_volume/max_volume)
+                if goal_percentage > 50:
+                    goal = True
+
+        return goal
+
+
+def football_gps_traj_exp(custom_state_noise=None, custom_obs_noise=None):
     np.random.seed(405)
-    init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]),
-                        np.random.normal(0, 10e-2, size=(6))).reshape((6, 1))
-    var = np.array([[0.01, 0, 0, 0, 0, 0],
-                    [0, 0.01, 0, 0, 0, 0],
-                    [0, 0, 0.01, 0, 0, 0],
-                    [0, 0, 0, 0.1, 0, 0],
-                    [0, 0, 0, 0, 0.1, 0],
-                    [0, 0, 0, 0, 0, 0.1]])
-    if custom_state_noise is None:
-        r = [0.01 ** 2, 0.01 ** 2, 0.01 ** 2, 0.1 ** 2, 0.1 ** 2, 0.1 ** 2]
+    goal_gps = 0
+    goal_ground = 0
+    goal_estimated = 0
 
-    else:
-        r = custom_state_noise
-    custom_state_noise = r
+    ground_traj = []
+    gps_traj = []
+    estimated_traj = []
 
-    if custom_observation_noise is None:
-        q = [0.01, 0.01, 0.01]
-    else:
-        q = custom_observation_noise
-
-    custom_observation_noise = q
-
-    C = np.array([[1, 0, 0, 0, 0, 0],
-                  [0, 1, 0, 0, 0, 0],
-                  [0, 0, 1, 0, 0, 0]])
-
-    goal = 0
-    traj = []
     for i in range(0, 1000):
-        football = Football(init_state, var, C, False, custom_state_noise, custom_observation_noise)
+        kfilter, sensor_traj = run_football_gps(custom_state_noise=custom_state_noise,custom_observation_noise=custom_obs_noise,
+                                                plot = False, seed = False)
+        est_x = kfilter.estimated_x
+        l_gro = [[], False]
+        l_gps = [[], False]
+        l_est = [[], False]
 
-        l_traj = [[football.get_zt().flatten()], False]
-        for t in np.arange(0, 1.30, 0.01):
-            football.true_X = football.update_true()
-            z_t = football.get_zt().flatten()
-            l_traj[0].append(z_t)
+        for i in np.arange(0, 130):
+            l_gro[0].append({"x":est_x[i]["x_g"],"y":est_x[i]["y_g"], "z":est_x[i]["z_g"]})
+            l_est[0].append({"x": est_x[i]["x"], "y": est_x[i]["y"], "z": est_x[i]["z"],
+                          "x_var": est_x[i]["x_var"], "y_var": est_x[i]["y_var"], "z_var": est_x[i]["z_var"]})
+            l_gps[0].append({"x":sensor_traj[i]["x_s"],"y":sensor_traj[i]["y_s"],"z":sensor_traj[i]["z_s"]})
 
-            if t > 1:
-                position = z_t
-                goal_range_x = [-4, 4]
-                goal_range_y = [49.5, 50.5]
-                goal_range_z = [0, 3]
+            if predict_goal(l_gro[0][-1]):
+                l_gro[1] = True
 
-                if goal_range_x[0] < position[0] < goal_range_x[1]:
-                    if goal_range_z[0] < position[2] < goal_range_z[1]:
-                        if goal_range_y[0] < position[1] < goal_range_y[1]:
-                            l_traj[1] = True
-        traj.append(l_traj)
-        if l_traj[1]:
-            goal += 1
-    plot_without_uncertainity(traj, goal, ["x", "y", "z"], str(goal/10)+"%")
+            if predict_goal(l_gps[0][-1]):
+                l_gps[1] = True
 
-def football_imu_traj_exp(custom_state_noise= None, custom_observation_noise=None):
+            if predict_goal_with_uncertainty(l_est[0][-1]):
+                l_est[1] = True
+
+        ground_traj.append(l_gro)
+        gps_traj.append(l_gps)
+        estimated_traj.append(l_est)
+        if l_gro[1]:
+            goal_ground += 1
+        if l_gps[1]:
+            goal_gps += 1
+        if l_est[1]:
+            goal_estimated += 1
+
+    plot_without_uncertainity(ground_traj, goal_ground, ["x", "y", "z"], str(goal_ground/10)+"%")
+    plot_without_uncertainity(gps_traj, goal_gps, ["x", "y", "z"], str(goal_gps / 10) + "%")
+    plot_without_uncertainity(estimated_traj, goal_estimated, ["x", "y", "z"], str(goal_estimated / 10) + "%")
+
+
+def football_imu_traj_exp(custom_state_noise = None, custom_observation_noise=None):
     np.random.seed(405)
-    init_state = np.add(np.array([24.0, 4.0, 0.0, -16.04, 36.8, 8.61]),
-                        np.random.normal(0, 10e-2, size=(6))).reshape((6, 1))
-    var = np.array([[0.01, 0, 0, 0, 0, 0],
-                    [0, 0.01, 0, 0, 0, 0],
-                    [0, 0, 0.01, 0, 0, 0],
-                    [0, 0, 0, 0.1, 0, 0],
-                    [0, 0, 0, 0, 0.1, 0],
-                    [0, 0, 0, 0, 0, 0.1]])
-    if custom_state_noise is None:
-        r = [0.01 ** 2, 0.01 ** 2, 0.01 ** 2, 0.1 ** 2, 0.1 ** 2, 0.1 ** 2]
+    goal_imu = 0
+    goal_ground = 0
+    goal_estimated = 0
 
-    else:
-        r = custom_state_noise
-    custom_state_noise = r
+    ground_traj = []
+    imu_traj = []
+    estimated_traj = []
 
-    if custom_observation_noise is None:
-        q = [0.01, 0.01, 0.01]
-    else:
-        q = custom_observation_noise
-
-    custom_observation_noise = q
-
-    C = np.array([[1, 0, 0, 0, 0, 0],
-                  [0, 1, 0, 0, 0, 0],
-                  [0, 0, 1, 0, 0, 0]])
-
-    goal = 0
-    traj = []
     for i in range(0, 1000):
-        football = Football(init_state, var, C, False, custom_state_noise, custom_observation_noise)
+        kfilter, sensor_traj = run_football_imu(plot=False, seed=False)
+        est_x = kfilter.estimated_x
+        l_gro = [[], False]
+        l_gps = [[], False]
+        l_est = [[], False]
 
-        l_traj = [[football.get_zt().flatten()], False]
-        for t in np.arange(0, 1.30, 0.01):
-            football.true_X = football.update_true()
-            z_t = football.get_zt().flatten()
-            l_traj[0].append(z_t)
+        for i in np.arange(0, 130):
+            l_gro[0].append({"x": est_x[i]["x_g"], "y": est_x[i]["y_g"], "z": est_x[i]["z_g"]})
+            l_est[0].append({"x": est_x[i]["x"], "y": est_x[i]["y"], "z": est_x[i]["z"],
+                             "x_var": est_x[i]["x_var"], "y_var": est_x[i]["y_var"], "z_var": est_x[i]["z_var"]})
+            l_gps[0].append({"x": sensor_traj[i]["x_s"], "y": sensor_traj[i]["y_s"], "z": sensor_traj[i]["z_s"]})
 
-            if t > 1:
-                position = z_t
-                goal_range_x = [-4, 4]
-                goal_range_y = [49.5, 50.5]
-                goal_range_z = [0, 3]
+            if predict_goal(l_gro[0][-1]):
+                l_gro[1] = True
 
-                if goal_range_x[0] < position[0] < goal_range_x[1]:
-                    if goal_range_z[0] < position[2] < goal_range_z[1]:
-                        if goal_range_y[0] < position[1] < goal_range_y[1]:
-                            l_traj[1] = True
-        traj.append(l_traj)
-        if l_traj[1]:
-            goal += 1
-    plot_without_uncertainity(traj, goal, ["x", "y", "z"], str(goal/10)+"%")
+            if predict_goal(l_gps[0][-1]):
+                l_gps[1] = True
 
-def predict_goal_with_uncertainty():
-    np.random.seed(322)
+            if predict_goal_with_uncertainty(l_est[0][-1]):
+                l_est[1] = True
 
+        ground_traj.append(l_gro)
+        imu_traj.append(l_gps)
+        estimated_traj.append(l_est)
+        if l_gro[1]:
+            goal_ground += 1
+        if l_gps[1]:
+            goal_imu += 1
+        if l_est[1]:
+            goal_estimated += 1
 
-    traj = []
-    for i in range(0, 1000):
-
-        kfilter = run_football_gps()
-        estimate_x = kfilter.estimated_x
-        for i in range(100, 130):
-            position = [estimate_x[i]["x"], estimate_x[i]["y"], estimate_x[i]["z"]]
-
-            goal_range_x = [-4, 4]
-            goal_range_y = [50, 51]
-            goal_range_z = [0, 3]
-
-            goal_percentage = 0
-
-            if goal_range_x[0] < position[0] < goal_range_x[1]:
-                if goal_range_z[0] < position[2] < goal_range_z[1]:
-                    if goal_range_y[0] < position[1] < goal_range_y[1]:
-                        std_dev = [ np.sqrt(estimate_x[i]["x"]), np.sqrt(estimate_x[i]["y"]),
-                                    np.sqrt(estimate_x[i]["z"])]
-
-                        ecl_a = 2 * std_dev[0]
-                        ecl_b = 2 * std_dev[1]
-                        ecl_c = 2 * std_dev[2]
-
-                        ecl_centre_x = position[0]
-                        ecl_centre_y = position[1]
-                        ecl_centre_z = position[2]
-
-                        x_intervals = np.arange(0.5, 4, 1 / 10)
-                        y_intervals = np.arange(50, 52, 1 / 10)
-                        z_intervals = np.arange(0, 3, 1 / 10)
-                        volume = (1 / 10) ** 3
-                        max_volume = ((4 / 3) * np.pi * ecl_a * ecl_b * ecl_c)/2
-                        total_volume = 0
-                        for x in x_intervals:
-                            for y in y_intervals:
-                                for z in z_intervals:
-                                    check = (((x - ecl_centre_x) ** 2) / ecl_a) + (((y - ecl_centre_y) ** 2) / ecl_b) + (
-                                                ((z - ecl_centre_z) ** 2) / ecl_c)
-                                    if check <= 1:
-                                        total_volume += volume
-
-                        goal_percentage = (total_volume/max_volume)*0.68
-
+    plot_without_uncertainity(ground_traj, goal_ground, ["x", "y", "z"], str(goal_ground / 10) + "%")
+    plot_without_uncertainity(imu_traj, goal_imu, ["x", "y", "z"], str(goal_imu / 10) + "%")
+    plot_without_uncertainity(estimated_traj, goal_estimated, ["x", "y", "z"], str(goal_estimated / 10) + "%")
 
 
 def extended_filter2d_exp(traj_precal=None, custom_state_noise= None, custom_observation_noise= None, field_mode = 0):
+    np.random.seed(234)
     A = np.array([[1, 0, 0.01, 0],
                   [0, 1, 0, 0.01],
                   [0, 0,  1, 0,],
@@ -1228,7 +1175,7 @@ def extended_filter2d_exp(traj_precal=None, custom_state_noise= None, custom_obs
     B = np.array([[0], [0], [0], [0]]).reshape((4, 1))
 
     if custom_state_noise is None:
-        r = [0.01 ** 2, 0.01 ** 2,0.1 ** 2, 0.1 ** 2]
+        r = [0.01 ** 2, 0.01 ** 2, 0.1 ** 2, 0.1 ** 2]
 
     else:
         r = custom_state_noise
@@ -1249,9 +1196,8 @@ def extended_filter2d_exp(traj_precal=None, custom_state_noise= None, custom_obs
     Q = np.array([[q[0], 0,],
                   [0, q[1],],])
 
-
     init_state = np.add(np.array([0.0, -50.0, 0.0, 40.0]),
-                        np.random.normal(0, 10e-2, size=(4))).reshape((4,1))
+                        np.random.normal(0, 10e-2, size=(4))).reshape((4, 1))
 
     var = np.array([[0.0001, 0, 0, 0, ],
                     [0, 0.0001, 0, 0,],
@@ -1263,9 +1209,9 @@ def extended_filter2d_exp(traj_precal=None, custom_state_noise= None, custom_obs
     else:
         football = Football(traj_precal[0], var, None, True, custom_state_noise, custom_observation_noise, field_2d=True, field_mode=field_mode )
 
-    Kfilter = ExtendedKalmanFilter(A, B, R, Q,4, field_mode)
+    Kfilter = ExtendedKalmanFilter(A, B, R, Q, 4, field_mode)
     i = 1
-    for t in np.arange(0, 1.30, 0.01):
+    for t in np.arange(0, 2.50, 0.01):
         ut = football.get_ut()
         zt = football.get_zt()
         mu, sigma = Kfilter.update(football.mu, football.sigma, ut, zt, t, football.true_X)
@@ -1277,12 +1223,90 @@ def extended_filter2d_exp(traj_precal=None, custom_state_noise= None, custom_obs
             football.true_X = traj_precal[i]
             i += 1
 
-    plot_XY_projection(Kfilter.estimated_x, None)
+    plot_XY_projection_basepoles(Kfilter.estimated_x, None,"",field_mode)
     return Kfilter
 
 
 def plot_XY_projection(data, sensor_traj, title="Given Noise"):
     df = pd.DataFrame(data)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["x_g"],
+        y=df["y_g"],
+        name='Ground',
+        mode='lines',
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df["x"],
+        y=df["y"],
+        error_x=dict(
+            type='data',
+            array=np.sqrt(df["x_var"]),
+            visible=True
+        ),
+        error_y=dict(
+            type='data',
+            array=np.sqrt(df["y_var"]),
+            visible=True
+        ),
+        name="Estimated Trajectory",
+        mode='lines',
+    ))
+    # drawing ground truth trajectory
+    if sensor_traj is not None:
+        sen_df = pd.DataFrame(sensor_traj)
+        fig.add_trace(go.Scatter(
+            x=sen_df["x_s"],
+            y=sen_df["y_s"],
+            name="Sensor Trajectory",
+            mode='lines',
+        ))
+    # sensor trajectory
+
+    for i, row in df.iterrows():
+        x_cen, y_cen = row["x"], row["y"]
+        x_sigma, y_sigma = np.sqrt(row["x_var"]), np.sqrt(row["y_var"])
+        angle = 0
+        angle_rad = np.radians(angle)
+
+        t = np.linspace(0, 2 * np.pi, 100)
+        x_ellipse = x_cen + x_sigma * np.cos(t) * np.cos(angle_rad) - y_sigma * np.sin(t) * np.sin(angle_rad)
+        y_ellipse = y_cen + x_sigma * np.cos(t) * np.sin(angle_rad) + y_sigma * np.sin(t) * np.cos(angle_rad)
+
+        fig.add_trace(go.Scatter(x=x_ellipse, y=y_ellipse, mode='lines', showlegend=False, line=dict(color="rgba(255, 0, 0, 0.5)")))
+
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(range=[0, 50], dtick=2),
+            yaxis=dict(range=[0, 50], dtick=2),
+        )
+    )
+
+    fig.update_layout(
+        title='XY Projection of Football with Uncertainty Ellipses ' + title,
+        scene=dict(
+            xaxis_title='X Axis',
+            yaxis_title='Y Axis',
+        )
+    )
+
+    fig.show()
+
+
+def plot_XY_projection_basepoles(data, sensor_traj, title="Given Noise",mode = 0):
+    df = pd.DataFrame(data)
+    if mode==0:
+        bs1 = [-32, 50]
+        bs2 = [32, 50]
+    elif mode == 1:
+        bs1 = [32, -50]
+        bs2 = [32, 50]
+    else:
+        bs1 = [-32, -50]
+        bs2 = [32, 50]
+
 
     fig = go.Figure()
     field = [
@@ -1296,6 +1320,8 @@ def plot_XY_projection(data, sensor_traj, title="Given Noise"):
         [4, 50],
         [-4, 50],
     ]
+    poles = field[0:4]
+
     field_x, field_y = zip(*field)
     goal_x, goal_y = zip(*goal)
 
@@ -1324,6 +1350,16 @@ def plot_XY_projection(data, sensor_traj, title="Given Noise"):
     fig.add_trace(go.Scatter(
         x=df["x"],
         y=df["y"],
+        error_x=dict(
+            type='data',
+            array=np.sqrt(df["x_var"]),
+            visible=True
+        ),
+        error_y=dict(
+            type='data',
+            array=np.sqrt(df["y_var"]),
+            visible=True
+        ),
         name="Estimated Trajectory",
         mode='lines',
     ))
@@ -1338,10 +1374,10 @@ def plot_XY_projection(data, sensor_traj, title="Given Noise"):
         ))
     # sensor trajectory
 
-    for i,row in df.iterrows():
+    for i, row in df.iterrows():
         x_cen, y_cen = row["x"], row["y"]
-        x_sigma, y_sigma = 2*np.sqrt(row["x_var"]), 2*np.sqrt(row["y_var"])
-        angle = 30
+        x_sigma, y_sigma = np.sqrt(row["x_var"]), np.sqrt(row["y_var"])
+        angle = 0
         angle_rad = np.radians(angle)
 
         t = np.linspace(0, 2 * np.pi, 100)
@@ -1349,13 +1385,19 @@ def plot_XY_projection(data, sensor_traj, title="Given Noise"):
         y_ellipse = y_cen + x_sigma * np.cos(t) * np.sin(angle_rad) + y_sigma * np.sin(t) * np.cos(angle_rad)
 
         fig.add_trace(go.Scatter(x=x_ellipse, y=y_ellipse, mode='lines', showlegend=False, line=dict(color="rgba(0, 0, 150, 0.5)")))
-
-        # fig.update_layout(
-        #     scene=dict(
-        #         xaxis=dict(range=[-32, 32], dtick=5),
-        #         yaxis=dict(range=[-50, 50], dtick=5),
-        #     )
-        # )
+        if i % 20==0:
+            fig.add_trace(go.Scatter(
+                x=[x_cen, bs1[0]],
+                y=[y_cen, bs1[1]],
+                mode='lines',
+                showlegend=False
+            ))
+            fig.add_trace(go.Scatter(
+                x=[x_cen, bs2[0]],
+                y=[y_cen, bs2[1]],
+                mode='lines',
+                showlegend=False
+            ))
 
         fig.update_layout(
             title='XY Projection of Football with Uncertainty Ellipses ' + title,
@@ -1364,34 +1406,34 @@ def plot_XY_projection(data, sensor_traj, title="Given Noise"):
                 yaxis_title='Y Axis',
             )
         )
-        fig.update_layout(dragmode='pan')
-
     fig.show()
 
 
 if __name__ == "__main__":
-    # train_exp1 = run_train()
-    # train_noise_more = run_train(None, None, [0.002, 0.35], [0.0002])
-    # train_noise_less = run_train(None, None, [0.00005, 0.15], [0.000005])
-    #train_failure_obs = run_train(t_start=1.5, t_end=2.5)
+    print("Kindly Uncomment Experiment that you want to run (At the end)!")
+    # run_train()      # Task 1(a) (b) (c)
 
-    # comp_plot_train([train_exp1[1].estimated_x, train_exp2_pos_noise_less[1].estimated_x,
-    #                 train_exp2_pos_noise_more[1].estimated_x],
-    #                 ["position", "position_mean"], ["given noise", "less noise", "more noise"],["time", "time"],
-    #                 ["position","position"],["Actual Position", "Estimated Position"], [None,"position_var"])
+    # run_train(None, None, [0.002, 0.35], [0.0002])     # Task 1(d) (e)
+    # run_train(None, None, [0.00005, 0.15], [0.000005])     #Task 1(d) (e)
 
-    # train_exp3 = run_train(None, None, [0.1 ** 2, 0.7 ** 2], [0.01 ** 2])
-    # train_exp4 = run_train(None, None, [0.1 ** 2, 0.5 ** 2], [0.04 ** 2])
+    # run_train(t_start=1.5, t_end=2.5)     #Task 1(f)
 
     # run_football_all()          #Task 2(b)
 
-    football_ground_traj_exp()      # Task 2(c)
-    football_gps_traj_exp()         # Task 2(c)
-    # predict_goal_with_uncertainty()
-    # run_football_gps()
-    # run_football_gps(custom_state_noise=[0.015**2, 0.015**2, 0.015**2, 0.15**2, 0.15**2, 0.015**2],
+    # football_gps_traj_exp()         # Task 2(c)
+    # football_imu_traj_exp()         # Task 2(c)
+
+    # football_gps_traj_exp(custom_state_noise=[0.015**2, 0.015**2, 0.015**2, 0.15**2, 0.15**2, 0.015**2],       #Task 2(d)      More Noise
+    #                       custom_obs_noise=[0.15**2, 0.15**2, 0.15**2])
+    # football_gps_traj_exp(custom_state_noise=[0.005 ** 2, 0.005 ** 2, 0.005 ** 2, 0.05 ** 2, 0.05 ** 2, 0.005 ** 2],       #Task 2(d)   Less Noise
+    #                       custom_obs_noise=[0.05 ** 2, 0.05 ** 2, 0.05 ** 2])
+
+    # run_football_gps()            #Task 2(e)
+    # run_football_gps(custom_state_noise=[0.015**2, 0.015**2, 0.015**2, 0.15**2, 0.15**2, 0.015**2],       #Task 2(e)
     #                  custom_observation_noise=[0.15**2, 0.15**2, 0.15**2], title="More_noise")
-    # run_football_gps(custom_state_noise=[0.005 ** 2, 0.005 ** 2, 0.005 ** 2, 0.05 ** 2, 0.05 ** 2, 0.005 ** 2],
+    # run_football_gps(custom_state_noise=[0.005 ** 2, 0.005 ** 2, 0.005 ** 2, 0.05 ** 2, 0.05 ** 2, 0.005 ** 2],       #Task 2(e)
     #                  custom_observation_noise=[0.05 ** 2, 0.05 ** 2, 0.05 ** 2], title="Less_noise")
 
-    #extended_filter2d_exp()
+    # extended_filter2d_exp()                 #Task 2f
+    # extended_filter2d_exp(field_mode=1)     #Task 2f
+    # extended_filter2d_exp(field_mode=2)     #Task 2f
